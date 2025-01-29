@@ -20,15 +20,10 @@ def capture_frames(queue, stop_event):
     cap.release()
 
 
-
 def process_frames(queue, model, stop_event, victory_condition, gui_queue):
     """
     Processes frames from the queue using the YOLO model.
-    Modified to use only one (upper) boundary line for each player.
-    A player is marked as cheating if, in every 2-second interval of the 4-second countdown,
-    they do not cross that line at least once (showing both outside and inside states).
-    Additionally, a player is marked as cheating if they change their gesture between
-    0.5 and 1.5 seconds after the countdown ends.
+    Modified to start the countdown and set boundary lines after 1 second of detecting two fists.
     """
     player_left_score = 0
     player_right_score = 0
@@ -39,6 +34,8 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
     delay_start_time = 0
     winner_message = None
     guidance_message = "Show 'rock' to start the round!"
+    round_end_time = 0  # Track when the round ends
+    round_end_delay = 3  # Delay in seconds before the next round can start
 
     # Store the single boundary line (y-value) for each player
     target_positions = {"PlayerLeft": None, "PlayerRight": None}
@@ -64,6 +61,10 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
     gesture_check_active = False
     gesture_check_start_time = 0
     initial_gestures = {"PlayerLeft": None, "PlayerRight": None}
+    initial_gestures_captured = False  # Track if initial gestures have been captured
+
+    # Variable to track when two fists are detected
+    fists_detected_time = None
 
     while not stop_event.is_set():
         current_time = time.time()
@@ -105,23 +106,29 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
                 # Check if both players are showing 'rock' to start the round
                 if not countdown_active and not round_active:
                     if player_left_gesture == "rock" and player_right_gesture == "rock":
-                        countdown_active = True
-                        round_active = True
-                        countdown_start_time = time.time()
-                        guidance_message = "Round starts! Move your hand around the line!"
+                        if fists_detected_time is None:
+                            fists_detected_time = current_time
+                        elif current_time - fists_detected_time >= 1:
+                            # Ensure that the round has ended and the delay has passed
+                            if current_time - round_end_time >= round_end_delay:
+                                countdown_active = True
+                                round_active = True
+                                countdown_start_time = time.time()
+                                guidance_message = "Round starts! Move your hand around the line, with only Rock gesture"
 
-                        # Set the single boundary line for each player (just below y_min)
-                        target_positions["PlayerLeft"]  = player_left_y_min  - padding
-                        target_positions["PlayerRight"] = player_right_y_min - padding
+                                # Set the single boundary line for each player (just below y_min)
+                                target_positions["PlayerLeft"]  = player_left_y_min  - padding
+                                target_positions["PlayerRight"] = player_right_y_min - padding
 
-                        # Reset cheating/tracking
-                        cheat_flags = {"PlayerLeft": False, "PlayerRight": False}
-                        cheat_reasons = {"PlayerLeft": "", "PlayerRight": ""}
-                        touch_history = {
-                            "PlayerLeft":  {"outside": False, "inside": False},
-                            "PlayerRight": {"outside": False, "inside": False}
-                        }
-                        last_check_time = time.time()
+                                # Reset cheating/tracking
+                                cheat_flags = {"PlayerLeft": False, "PlayerRight": False}
+                                cheat_reasons = {"PlayerLeft": "", "PlayerRight": ""}
+                                touch_history = {
+                                    "PlayerLeft":  {"outside": False, "inside": False},
+                                    "PlayerRight": {"outside": False, "inside": False}
+                                }
+                                last_check_time = time.time()
+                                fists_detected_time = None
 
                 # If we already had a winner message, let them show 'rock' again to reset
                 if winner_message and not countdown_active and not round_active:
@@ -172,6 +179,7 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
                     gesture_check_start_time = time.time()
                     initial_gestures["PlayerLeft"] = player_left_gesture
                     initial_gestures["PlayerRight"] = player_right_gesture
+                    initial_gestures_captured = False  # Reset for the next round
 
             # Draw the single boundary lines (if round is active)
             if round_active:
@@ -190,13 +198,100 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
                         (0, 255, 0), 2
                     )
 
-            # After the countdown, we wait 2 seconds, then finalize the round
+            # # After the countdown, we wait 2 seconds, then finalize the round
+            # if delay_active:
+            #     elapsed_delay = current_time - delay_start_time
+                
+            #     # 1) First second after countdown: "Perform your final move now!"
+            #     if elapsed_delay < 1:
+            #         guidance_message = "Perform your final move now!"
+            #         # Here you let players adjust gestures freely
+            #         # (no cheating is flagged during this 1-second window)
+            #         # Keep track of the updated gestures if you'd like:
+            #         initial_gestures["PlayerLeft"] = player_left_gesture
+            #         initial_gestures["PlayerRight"] = player_right_gesture
+        
+            #     if elapsed_delay >= 2:
+            #         delay_active = False
+
+            #         # Check cheating
+            #         both_cheated = cheat_flags["PlayerLeft"] and cheat_flags["PlayerRight"]
+            #         left_cheated = cheat_flags["PlayerLeft"] and not cheat_flags["PlayerRight"]
+            #         right_cheated = cheat_flags["PlayerRight"] and not cheat_flags["PlayerLeft"]
+
+            #         if both_cheated:
+            #             winner_message = "Both players cheated! No one wins this round."
+            #             player_left_score -= 1
+            #             player_right_score -= 1
+            #         elif left_cheated:
+            #             winner_message = f"Player Left cheated! {cheat_reasons['PlayerLeft']} No one wins this round."
+            #             player_left_score -= 1
+            #         elif right_cheated:
+            #             winner_message = f"Player Right cheated! {cheat_reasons['PlayerRight']} No one wins this round."
+            #             player_right_score -= 1
+            #         else:
+            #             # Determine the winner if neither cheated
+            #             if len(predictions) >= 2 and player_left_gesture and player_right_gesture:
+            #                 if player_left_gesture == player_right_gesture:
+            #                     winner_message = "It's a tie!"
+            #                 elif (
+            #                     (player_left_gesture == "rock"     and player_right_gesture == "scissors") or
+            #                     (player_left_gesture == "scissors" and player_right_gesture == "paper")    or
+            #                     (player_left_gesture == "paper"    and player_right_gesture == "rock")
+            #                 ):
+            #                     player_left_score += 1
+            #                     winner_message = "Player Left wins the round!"
+            #                 else:
+            #                     player_right_score += 1
+            #                     winner_message = "Player Right wins the round!"
+
+            #                 # Check victory condition
+            #                 if player_left_score == victory_condition:
+            #                     winner_message = "Player Left wins the game!"
+            #                     stop_event.set()
+            #                 elif player_right_score == victory_condition:
+            #                     winner_message = "Player Right wins the game!"
+            #                     stop_event.set()
+            #             else:
+            #                 winner_message = "Not enough players detected to determine a winner."
+
+            #         # Reset everything for the next round
+            #         round_active = False
+            #         cheat_flags = {"PlayerLeft": False, "PlayerRight": False}
+            #         cheat_reasons = {"PlayerLeft": "", "PlayerRight": ""}
+            #         round_end_time = current_time  # Record the time the round ended
+            
             if delay_active:
                 elapsed_delay = current_time - delay_start_time
-                if elapsed_delay >= 2:
+
+                # 1) First second after countdown: "Perform your final move now!"
+                if elapsed_delay < 2:
+                    guidance_message = "Perform your final move now!"
+                    # Here you let players adjust gestures freely
+                    # (no cheating is flagged during this 1-second window)
+                    # Keep track of the updated gestures if you'd like:
+                    initial_gestures["PlayerLeft"] = player_left_gesture
+                    initial_gestures["PlayerRight"] = player_right_gesture
+
+                # 2) Second second after countdown: "Freeze! No changes allowed!"
+                elif 2 <= elapsed_delay < 4:
+                    guidance_message = "Freeze! No changes allowed!"
+                    # If they change the gesture in this window, mark as cheating
+                    if player_left_gesture and initial_gestures["PlayerLeft"]:
+                        if player_left_gesture != initial_gestures["PlayerLeft"]:
+                            cheat_flags["PlayerLeft"] = True
+                            cheat_reasons["PlayerLeft"] = "Player Left changed gesture during Freeze!"
+
+                    if player_right_gesture and initial_gestures["PlayerRight"]:
+                        if player_right_gesture != initial_gestures["PlayerRight"]:
+                            cheat_flags["PlayerRight"] = True
+                            cheat_reasons["PlayerRight"] = "Player Right changed gesture during Freeze!"
+
+                # After 2 total seconds, finalize the round
+                else:
                     delay_active = False
 
-                    # Check cheating
+                    # -- Check cheating and decide the winner exactly as before --
                     both_cheated = cheat_flags["PlayerLeft"] and cheat_flags["PlayerRight"]
                     left_cheated = cheat_flags["PlayerLeft"] and not cheat_flags["PlayerRight"]
                     right_cheated = cheat_flags["PlayerRight"] and not cheat_flags["PlayerLeft"]
@@ -212,7 +307,7 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
                         winner_message = f"Player Right cheated! {cheat_reasons['PlayerRight']} No one wins this round."
                         player_right_score -= 1
                     else:
-                        # Determine the winner if neither cheated
+                        # Determine winner if neither cheated
                         if len(predictions) >= 2 and player_left_gesture and player_right_gesture:
                             if player_left_gesture == player_right_gesture:
                                 winner_message = "It's a tie!"
@@ -227,7 +322,7 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
                                 player_right_score += 1
                                 winner_message = "Player Right wins the round!"
 
-                            # Check victory condition
+                            # Check final victory
                             if player_left_score == victory_condition:
                                 winner_message = "Player Left wins the game!"
                                 stop_event.set()
@@ -237,16 +332,16 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
                         else:
                             winner_message = "Not enough players detected to determine a winner."
 
-
-                    # Reset everything for the next round
+                    # Reset for next round
                     round_active = False
                     cheat_flags = {"PlayerLeft": False, "PlayerRight": False}
                     cheat_reasons = {"PlayerLeft": "", "PlayerRight": ""}
+                    round_end_time = current_time
 
             # Check for gesture changes between 0.5 and 1.5 seconds after countdown
             if gesture_check_active:
                 elapsed_gesture_check = current_time - gesture_check_start_time
-                if 3 <= elapsed_gesture_check <= 10:
+                if elapsed_gesture_check == 3:
                     if player_left_gesture != initial_gestures["PlayerLeft"]:
                         cheat_flags["PlayerLeft"] = True
                         cheat_reasons["PlayerLeft"] = "Player Left changed their gesture during the forbidden window!"
@@ -255,6 +350,15 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
                         cheat_reasons["PlayerRight"] = "Player Right changed their gesture during the forbidden window!"
                 elif elapsed_gesture_check > 1.5:
                     gesture_check_active = False
+
+            # Capture initial gestures 1 second after countdown finishes
+            if delay_active and not initial_gestures_captured:
+                elapsed_delay = current_time - delay_start_time
+                
+                if elapsed_delay >= 1:
+                    initial_gestures["PlayerLeft"] = player_left_gesture
+                    initial_gestures["PlayerRight"] = player_right_gesture
+                    initial_gestures_captured = True
 
             # Prepare GUI text
             info_text = f"Player Left: {player_left_score}   Player Right: {player_right_score}\n"
