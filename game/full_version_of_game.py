@@ -7,6 +7,32 @@ from multiprocessing import Process, Queue, Event
 from PIL import Image, ImageTk
 import torch
 import numpy as np
+import dlib
+from imutils import face_utils
+import mediapipe as mp
+import pygame
+
+# Initialize pygame mixer
+pygame.mixer.init()
+# Load the sound
+countdown_end_sound = "boxing-bell.mp3"
+
+detector = dlib.get_frontal_face_detector()
+predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')
+mp_face_mesh = mp.solutions.face_mesh
+face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+
+mask_image = cv2.imread('red_mask.png', cv2.IMREAD_UNCHANGED)
+if mask_image is None:
+    print("Error: Mask image could not be loaded.")
+    exit()
+    
+crown_img = cv2.imread("crown.png", cv2.IMREAD_UNCHANGED)
+# crown_img = cv2.resize(crown_img, (100, 100), interpolation=cv2.INTER_LINEAR)
+if crown_img is None:
+    print("Error: Crown image could not be loaded.")
+    exit()
+
 
 def capture_frames(queue, stop_event):
     """Captures frames from the webcam and puts them in the queue."""
@@ -18,6 +44,151 @@ def capture_frames(queue, stop_event):
             if not queue.full():
                 queue.put(frame)
     cap.release()
+
+def rotate_image(image, angle):
+    """Rotates an image around its center."""
+    (h, w) = image.shape[:2]
+    center = (w // 2, h // 2)
+    rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+    return cv2.warpAffine(image, rotation_matrix, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+
+def overlay_image(background, overlay, x, y, scale=1.0, angle=0):
+    """
+    Overlay one image (overlay) on another (background) at position (x, y) with a scale and rotation angle.
+    """
+    # Scale the overlay image
+    overlay = cv2.resize(overlay, (0, 0), fx=scale, fy=scale)
+    h, w, _ = overlay.shape
+
+    # Rotate the overlay image
+    center = (w // 2, h // 2)
+    rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+    rotated_overlay = cv2.warpAffine(overlay, rotation_matrix, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
+
+    # Define the region of interest (ROI) on the background
+    y1, y2 = max(0, y), min(background.shape[0], y + h)
+    x1, x2 = max(0, x), min(background.shape[1], x + w)
+    overlay_y1, overlay_y2 = max(0, -y), min(h, background.shape[0] - y)
+    overlay_x1, overlay_x2 = max(0, -x), min(w, background.shape[1] - x)
+
+    # Extract the alpha channel from the overlay
+    alpha = rotated_overlay[overlay_y1:overlay_y2, overlay_x1:overlay_x2, 3] / 255.0
+    alpha_inv = 1.0 - alpha
+
+    # Blend the overlay with the background
+    for c in range(3):  # Iterate over RGB channels
+        background[y1:y2, x1:x2, c] = (
+            alpha * rotated_overlay[overlay_y1:overlay_y2, overlay_x1:overlay_x2, c] +
+            alpha_inv * background[y1:y2, x1:x2, c]
+        )
+
+    return background
+
+def overlay_mask(frame, face_rect):
+    """Overlays the red mask on the detected face."""
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # Convert (fx, fy, fw, fh) to dlib.rectangle
+    if isinstance(face_rect, tuple):
+        fx, fy, fw, fh = face_rect
+        face_rect = dlib.rectangle(fx, fy, fx + fw, fy + fh)
+
+    shape = predictor(gray, face_rect)  # Now it's in the correct format
+    shape = face_utils.shape_to_np(shape)
+
+    # Extract key landmarks
+    chin_point = shape[8]  # Chin
+    under_eye_left = shape[36]  # Left eye
+    under_eye_right = shape[45]  # Right eye
+
+    # Calculate angle for mask rotation
+    delta_y = under_eye_right[1] - under_eye_left[1]
+    delta_x = under_eye_right[0] - under_eye_left[0]
+    angle = -np.degrees(np.arctan2(delta_y, delta_x))
+
+    # Calculate mask dimensions
+    mask_width = int(np.linalg.norm(shape[16] - shape[0]) * 1.1)
+    mask_height = int(np.linalg.norm(chin_point - ((under_eye_left[0] + under_eye_right[0]) // 2, 
+                                                   (under_eye_left[1] + under_eye_right[1]) // 2)) * 1.4)
+
+    # Rotate and resize mask
+    rotated_mask = rotate_image(mask_image, angle)
+    resized_mask = cv2.resize(rotated_mask, (mask_width, mask_height))
+
+    # Calculate mask placement
+    center_x = (chin_point[0] + under_eye_left[0] + under_eye_right[0]) // 3
+    center_y = chin_point[1] - (mask_height // 2) + 10
+
+    # Define the region of interest (ROI)
+    x1, y1 = max(0, center_x - mask_width // 2), max(0, center_y - mask_height // 2)
+    x2, y2 = min(frame.shape[1], center_x + mask_width // 2), min(frame.shape[0], center_y + mask_height // 2)
+    roi = frame[y1:y2, x1:x2]
+
+    # Overlay mask on frame
+    if resized_mask.shape[2] == 4:
+        alpha_mask = resized_mask[:, :, 3] / 255.0
+        alpha_frame = 1.0 - alpha_mask
+
+        alpha_mask = alpha_mask[:roi.shape[0], :roi.shape[1]]
+        alpha_frame = alpha_frame[:roi.shape[0], :roi.shape[1]]
+        resized_mask = resized_mask[:roi.shape[0], :roi.shape[1]]
+
+        for c in range(0, 3):
+            roi[:, :, c] = (alpha_mask * resized_mask[:, :, c] +
+                            alpha_frame * roi[:, :, c])
+
+        frame[y1:y2, x1:x2] = roi
+
+def overlay_crown(frame):
+    """Detect faces and overlay a crown using MediaPipe FaceMesh."""
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = face_mesh.process(rgb_frame)
+
+    if results.multi_face_landmarks:
+        for face_landmarks in results.multi_face_landmarks:
+            h, w, c = frame.shape
+
+            # Get landmarks for forehead and chin
+            forehead_x = int(face_landmarks.landmark[10].x * w)
+            forehead_y = int(face_landmarks.landmark[10].y * h)
+            chin_x = int(face_landmarks.landmark[152].x * w)
+            chin_y = int(face_landmarks.landmark[152].y * h)
+
+            # Calculate center point for the crown (slightly above forehead)
+            crown_center_x = forehead_x
+            crown_center_y = forehead_y - int((chin_y - forehead_y) * 1.2)
+
+            # Ensure scale is always positive
+            scale = max(0.0, (chin_y - forehead_y) / crown_img.shape[0] * 1.5)
+
+            # Calculate rotation angle based on the face tilt
+            left_eye_outer = face_landmarks.landmark[33]
+            right_eye_outer = face_landmarks.landmark[263]
+            delta_y = (right_eye_outer.y - left_eye_outer.y) * h
+            delta_x = (right_eye_outer.x - left_eye_outer.x) * w
+            angle = -np.degrees(np.arctan2(delta_y, delta_x))
+
+            # Overlay the crown on the frame
+            frame = overlay_image(frame, crown_img, crown_center_x - int(scale * crown_img.shape[1] // 2), crown_center_y, scale, angle)
+
+    return frame
+
+def zoom_on_face(frame, face_rect, zoom_factor=1.5):
+    """Zooms in on the winner's face while keeping the frame size the same."""
+    fx, fy, fw, fh = face_rect
+    cx, cy = fx + fw // 2, fy + fh // 2  # Face center
+
+    # Calculate new crop box
+    new_w = int(fw * zoom_factor)
+    new_h = int(fh * zoom_factor)
+    x1, y1 = max(0, cx - new_w // 2), max(0, cy - new_h // 2)
+    x2, y2 = min(frame.shape[1], cx + new_w // 2), min(frame.shape[0], cy + new_h // 2)
+
+    # Crop & resize back to original frame size
+    zoomed_face = frame[y1:y2, x1:x2]
+    zoomed_face = cv2.resize(zoomed_face, (frame.shape[1], frame.shape[0]))
+
+    return zoomed_face
 
 
 def process_frames(queue, model, stop_event, victory_condition, gui_queue):
@@ -36,6 +207,7 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
     guidance_message = "Show 'rock' to start the round!"
     round_end_time = 0  # Track when the round ends
     round_end_delay = 3  # Delay in seconds before the next round can start
+    winner_detected = None
 
     # Store the single boundary line (y-value) for each player
     target_positions = {"PlayerLeft": None, "PlayerRight": None}
@@ -66,13 +238,103 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
     # Variable to track when two fists are detected
     fists_detected_time = None
 
+    # Track which player cheated in the current round
+    cheated_players = {"PlayerLeft": False, "PlayerRight": False}
+
+    # # # TODO: Debug
+    # player_left_score = victory_condition  # Force left player to meet the victory condition
+    # winner_detected = "PlayerLeft"  # Manually set the winner
+
     while not stop_event.is_set():
         current_time = time.time()
 
         # Process frames if available
         if not queue.empty():
             frame = queue.get()
-            
+
+            if winner_detected:
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                results = face_mesh.process(rgb_frame)
+
+                zoom_factor = 1.25  # Initial zoom level (1.0 = no zoom)
+                target_zoom = 2  # Target zoom level
+                zoom_speed = 0.05  # Speed of zoom adjustment
+                crown_vertical_offset = 10  # Adjust this value to lower the crown further
+                margin_ratio = 1.2  # Extra margin around the face and crown
+
+                if results.multi_face_landmarks:
+                    for face_landmarks in results.multi_face_landmarks:
+                        h, w, c = frame.shape
+
+                        # Get landmarks for forehead and chin
+                        forehead_x = int(face_landmarks.landmark[10].x * w)
+                        forehead_y = int(face_landmarks.landmark[10].y * h)
+                        chin_x = int(face_landmarks.landmark[152].x * w)
+                        chin_y = int(face_landmarks.landmark[152].y * h)
+
+                        face_center_x = forehead_x  # X-coordinate of the face center
+
+                        # Check if the winner is PlayerLeft or PlayerRight
+                        if (winner_detected == "PlayerLeft" and face_center_x < frame.shape[1] // 2) or \
+                        (winner_detected == "PlayerRight" and face_center_x >= frame.shape[1] // 2):
+
+                            # Calculate center point for the zoom (midpoint between forehead and chin)
+                            center_x = (forehead_x + chin_x) // 2
+                            center_y = (forehead_y + chin_y) // 2
+
+                            # Determine the bounding box around the face and crown with margin
+                            face_width = int((chin_y - forehead_y) * margin_ratio)
+                            face_height = int((chin_y - forehead_y) * margin_ratio)
+
+                            # Smoothly adjust the zoom factor toward the target zoom
+                            if zoom_factor < target_zoom:
+                                zoom_factor += zoom_speed
+                            elif zoom_factor > target_zoom:
+                                zoom_factor -= zoom_speed
+
+                            # Calculate the cropped area based on the zoom factor
+                            zoom_w = int(w / zoom_factor)
+                            zoom_h = int(h / zoom_factor)
+                            top_left_x = max(center_x - zoom_w // 2, 0)
+                            top_left_y = max(center_y - zoom_h // 2, 0)
+                            bottom_right_x = min(center_x + zoom_w // 2, w)
+                            bottom_right_y = min(center_y + zoom_h // 2, h)
+
+                            # Ensure the cropping region stays within bounds
+                            cropped_frame = frame[top_left_y:bottom_right_y, top_left_x:bottom_right_x]
+
+                            # Resize the cropped frame back to the original frame size
+                            frame = cv2.resize(cropped_frame, (w, h), interpolation=cv2.INTER_LINEAR)
+
+                            # Adjust crown's position relative to the zoomed frame
+                            crown_center_x = int((forehead_x - top_left_x) * (w / (bottom_right_x - top_left_x)))
+                            crown_center_y = int((forehead_y - top_left_y) * (h / (bottom_right_y - top_left_y))) - int((chin_y - forehead_y) * 1.2 * (h / (bottom_right_y - top_left_y)))
+
+                            # Adjust scale for the crown relative to the zoomed frame
+                            scale = (chin_y - forehead_y) / crown_img.shape[0] * 1.5 * (h / (bottom_right_y - top_left_y))
+
+                            # Calculate rotation angle based on the face tilt
+                            left_eye_outer = face_landmarks.landmark[33]
+                            right_eye_outer = face_landmarks.landmark[263]
+                            delta_y = (right_eye_outer.y - left_eye_outer.y) * h
+                            delta_x = (right_eye_outer.x - left_eye_outer.x) * w
+                            angle = -np.degrees(np.arctan2(delta_y, delta_x))
+
+                            # Overlay the crown on the zoomed frame
+                            frame = overlay_image(
+                                frame,
+                                crown_img,
+                                crown_center_x - int(scale * crown_img.shape[1] // 2),
+                                crown_center_y,
+                                scale,
+                                angle
+                            )
+
+                            break  # Only process the first detected winner
+
+
+
+
             # Get predictions from the YOLO model
             results = model(frame)
             result = results[0]
@@ -84,11 +346,46 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
                 predictions = predictions[predictions[:, 4].argsort(descending=True)]
                 predictions = predictions[:2]
 
+            # Associate faces with the closest hands
+            face_assignments = {}  # Store each face's closest hand
+            hands = []
+
+            # Extract hand positions first (use x_min, y_min)
+            if len(predictions) >= 2:
+                for box in predictions:
+                    x_min, y_min, x_max, y_max, conf, cls = box.tolist()
+                    label = model.names[int(cls)].lower()
+                    hands.append((x_min, y_min, label))
+
+            # for player in ["PlayerLeft", "PlayerRight"]:
+            #     if cheat_flags[player]:
+            #         cheated_players[player] = True  # Mark as cheated
+            
+            if any(cheated_players.values()):
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                faces = detector(gray)
+
+                for face in faces:
+                    # Unpack face coordinates based on type (tuple or dlib rectangle)
+                    if isinstance(face, tuple):
+                        fx, fy, fw, fh = face
+                    else:
+                        fx, fy, fw, fh = face.left(), face.top(), face.width(), face.height()
+
+                    # Determine which side of the screen the face belongs to
+                    face_center_x = fx + (fw // 2)
+                    player_side = "PlayerLeft" if face_center_x < frame.shape[1] // 2 else "PlayerRight"
+
+                    # Apply mask only if the player is marked as cheating
+                    if cheated_players[player_side]:
+                        overlay_mask(frame, (fx, fy, fw, fh))  # Cover the cheating player's face
+
             # Initialize placeholders for left/right gestures
             player_left_gesture = None
             player_right_gesture = None
             player_left_y_min, player_right_y_min = None, None
             player_left_y_max, player_right_y_max = None, None
+
 
             # We need at least 2 hands detected (one for each player)
             if len(predictions) >= 2:
@@ -114,7 +411,7 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
                                 countdown_active = True
                                 round_active = True
                                 countdown_start_time = time.time()
-                                guidance_message = "Round starts! Move your hand around the line, with only Rock gesture"
+                                guidance_message = "Round starts! Move your hand around the line!"
 
                                 # Set the single boundary line for each player (just below y_min)
                                 target_positions["PlayerLeft"]  = player_left_y_min  - padding
@@ -129,6 +426,9 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
                                 }
                                 last_check_time = time.time()
                                 fists_detected_time = None
+
+                                # Reset cheated players for the new round
+                                cheated_players = {"PlayerLeft": False, "PlayerRight": False}
 
                 # If we already had a winner message, let them show 'rock' again to reset
                 if winner_message and not countdown_active and not round_active:
@@ -166,12 +466,14 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
                                 f"{player} didn't move around the line (both above/below) "
                                 f"in {int(check_interval)} seconds!"
                             )
+                            cheated_players[player] = True  # Mark the player as cheated
                         # Reset for the next interval
                         touch_history[player] = {"outside": False, "inside": False}
                     last_check_time = current_time
 
                 # Once 4 seconds of countdown is done, move to the 2-second delay
                 if countdown_remaining == 0:
+                    pygame.mixer.Sound(countdown_end_sound).play()
                     countdown_active = False
                     delay_active = True
                     delay_start_time = time.time()
@@ -322,21 +624,22 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
                                 player_right_score += 1
                                 winner_message = "Player Right wins the round!"
 
-                            # Check final victory
+                            # Check victory condition
                             if player_left_score == victory_condition:
                                 winner_message = "Player Left wins the game!"
-                                stop_event.set()
+                                winner_detected = "PlayerLeft"
+
                             elif player_right_score == victory_condition:
                                 winner_message = "Player Right wins the game!"
-                                stop_event.set()
+                                winner_detected = "PlayerRight"
                         else:
                             winner_message = "Not enough players detected to determine a winner."
 
-                    # Reset for next round
+                    # Reset everything for the next round
                     round_active = False
                     cheat_flags = {"PlayerLeft": False, "PlayerRight": False}
                     cheat_reasons = {"PlayerLeft": "", "PlayerRight": ""}
-                    round_end_time = current_time
+                    round_end_time = current_time  # Record the time the round ended
 
             # Check for gesture changes between 0.5 and 1.5 seconds after countdown
             if gesture_check_active:
@@ -345,9 +648,11 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
                     if player_left_gesture != initial_gestures["PlayerLeft"]:
                         cheat_flags["PlayerLeft"] = True
                         cheat_reasons["PlayerLeft"] = "Player Left changed their gesture during the forbidden window!"
+                        cheated_players["PlayerLeft"] = True  # Mark the player as cheated
                     if player_right_gesture != initial_gestures["PlayerRight"]:
                         cheat_flags["PlayerRight"] = True
                         cheat_reasons["PlayerRight"] = "Player Right changed their gesture during the forbidden window!"
+                        cheated_players["PlayerRight"] = True  # Mark the player as cheated
                 elif elapsed_gesture_check > 1.5:
                     gesture_check_active = False
 
@@ -384,6 +689,7 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
                 break
 
     cv2.destroyAllWindows()
+
 
 
 class RockPaperScissorsApp:
@@ -447,7 +753,7 @@ class RockPaperScissorsApp:
 
         # Load the YOLO model
         # model = YOLO('yolo11-rps-detection.pt')
-        model = YOLO('fineTuned_best_V1.pt')
+        model = YOLO('fineTuned_best_V2.pt')
 
         # Check if CUDA is available and move the model to the GPU
         if torch.cuda.is_available():
