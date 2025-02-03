@@ -644,7 +644,7 @@ def process_frames(queue, model, stop_event, victory_condition, gui_queue):
             # Check for gesture changes between 0.5 and 1.5 seconds after countdown
             if gesture_check_active:
                 elapsed_gesture_check = current_time - gesture_check_start_time
-                if elapsed_gesture_check == 3:
+                if elapsed_gesture_check <= 3:
                     if player_left_gesture != initial_gestures["PlayerLeft"]:
                         cheat_flags["PlayerLeft"] = True
                         cheat_reasons["PlayerLeft"] = "Player Left changed their gesture during the forbidden window!"
