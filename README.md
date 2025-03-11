@@ -4,7 +4,7 @@ Real-time hand gesture detection to power a fully automated and interactive Rock
 
 Our project kaggle links for training our dataset on Yolo11:
 
-https://www.kaggle.com/code/mahanveisi/computer-vision-final-project
+https://www.kaggle.com/code/mahanveisi/rsp-computer-vision-final-project
 
 https://www.kaggle.com/code/mahanveisi/computer-vision-final-project
 
