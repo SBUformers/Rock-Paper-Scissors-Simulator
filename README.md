@@ -107,7 +107,7 @@ Additional constraints:
 1. **Startup**  
    - Players stand in frame, each with a **Rock (fist)** to initialize.
 2. **Countdown**  
-   - The system visually counts down (e.g., 3… 2… 1…).
+   - The system visually counts down (e.g., 4… 3… 2… 1…).
 3. **Gesture Reveal**  
    - YOLOv11 inspects final gestures (Rock, Paper, or Scissors).
 4. **Compare Gestures**  
@@ -130,64 +130,24 @@ Additional constraints:
 
 ---
 
-## **8. Repository Structure**
+## **8. Usage**
 
-A typical folder layout might look like:
-
-```
-project-root/
-├── yolov11/
-│   ├── rps_best.pt        # Final YOLOv11 model weights
-│   ├── detect.py          # YOLO detection script
-│   └── ...
-├── face_model/
-│   ├── face_landmarks.dat # For facial landmark detection
-│   └── ...
-├── game/
-│   ├── main_game.py       # Main script orchestrating the RPS gameplay
-│   └── ...
-├── results/
-│   ├── performance.gif    # Demonstration GIF (shown in README)
-│   └── ...
-├── assets/
-│   ├── masks/
-│   │   └── red_mask.png
-│   └── crowns/
-│       └── crown.png
-├── README.md
-└── requirements.txt
-```
-
-- **`yolov11/`**: YOLO code, configs, and weights.  
-- **`face_model/`**: Face detection and landmark model files.  
-- **`game/`**: Main game logic (countdown, cheat detection, overlays).  
-- **`results/`**: Visual results, including the performance GIF.  
-- **`assets/`**: Icons or images for crowns, masks, etc.
-
----
-
-## **9. Usage**
-
-1. **Install Requirements**  
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. **Run the Game**  
+1. **Run the Game**  
    ```bash
    python game/main_game.py
    ```
-3. **Webcam/Video**  
+2. **Webcam/Video**  
    - By default, `main_game.py` uses your **webcam** to detect gestures.  
    - To test on a recorded video, modify the script’s input source to `video.mp4`.
 
-4. **Gameplay**  
+3. **Gameplay**  
    - Position both players so that their hands and faces are visible to the camera.  
    - Once the program starts, the game runs a countdown.  
    - Keep your gesture consistent until the round ends—**or get flagged**!
 
 ---
 
-## **10. Results**
+## **9. Results**
 
 - **Detection Accuracy**: ~98.2% mAP@0.5 (Paper, Rock, Scissors).  
 - **Real-Time FPS**: ~20–25 FPS on a moderate GPU.  
@@ -198,7 +158,7 @@ See the top of this README for a live **GIF** demonstration (`results/performanc
 
 ---
 
-## **11. Future Work**
+## **10. Future Work**
 
 - **Expand Gesture Set**: Include Lizard and Spock (extending the game).
 - **Multi-Round Tournaments**: Track multiple rounds and overall champion.
@@ -207,7 +167,7 @@ See the top of this README for a live **GIF** demonstration (`results/performanc
 
 ---
 
-## **12. License**
+## **11. License**
 
 This project is open-sourced under the [MIT License](LICENSE).  
 Feel free to fork, modify, and distribute—just cite us or give a link back!
