@@ -10,7 +10,7 @@ https://www.kaggle.com/code/mahanveisi/computer-vision-final-project
 
 ---
 
-![Performance Demo](results/performance.gif)
+![Performance Demo](performance.gif)
 
 > In the demo above, YOLOv11 detects each player's gesture (Rock, Paper, or Scissors). The **left player** wins, so a separate model locates that player's face and places a **crown** on their head. Meanwhile, the **cheater** (caught changing their gesture post-countdown) receives a penalty of **–1 point** and has a **red mask** over their face.
 
