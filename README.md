@@ -2,6 +2,12 @@
 # **Rock–Paper–Scissors Game Automation with YOLOv11**  
 Real-time hand gesture detection to power a fully automated and interactive Rock–Paper–Scissors game—complete with **cheating detection** and **winner celebration**.
 
+Our project kaggle links for training our dataset on Yolo11:
+
+https://www.kaggle.com/code/mahanveisi/computer-vision-final-project
+
+https://www.kaggle.com/code/mahanveisi/computer-vision-final-project
+
 ---
 
 ![Performance Demo](results/performance.gif)
