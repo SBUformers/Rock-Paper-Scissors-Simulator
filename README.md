@@ -10,22 +10,6 @@ Real-time hand gesture detection to power a fully automated and interactive Rock
 
 ---
 
-## **Table of Contents**
-1. [Introduction](#introduction)  
-2. [Game Rules](#game-rules)  
-3. [Project Overview](#project-overview)  
-4. [Dataset and Model Training](#dataset-and-model-training)  
-5. [System Components](#system-components)  
-6. [Game Flow](#game-flow)  
-7. [Cheating Detection & Winner Celebration](#cheating-detection--winner-celebration)  
-8. [Repository Structure](#repository-structure)  
-9. [Usage](#usage)  
-10. [Results](#results)  
-11. [Future Work](#future-work)  
-12. [License](#license)
-
----
-
 ## **1. Introduction**
 This project showcases an end-to-end pipeline for **real-time hand gesture detection** and **automated gameplay** of Rock–Paper–Scissors using **YOLOv11**. Beyond mere detection, we’ve added:
 - **Cheating Detection**: Players changing their gesture after the countdown are penalized.  
