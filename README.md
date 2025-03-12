@@ -1,8 +1,8 @@
-# **Rock–Paper–Scissors Game Automation with YOLOv11**  
-
-For a full report with results, please refer to the [Final Report](https://github.com/SBUformers/Rock-Paper-Scissors-Simulator/blob/main/Final_report.pdf).
+# **Rock–Paper–Scissors Game Automation with YOLOv11**
 
 Real-time hand gesture detection to power a fully automated and interactive Rock–Paper–Scissors game—complete with **cheating detection** and **winner celebration**.
+
+For a full report with results, please refer to the [Final Report](https://github.com/SBUformers/Rock-Paper-Scissors-Simulator/blob/main/Final_report.pdf).
 
 ![Performance Demo](performance.gif)
 
@@ -19,9 +19,10 @@ Real-time hand gesture detection to power a fully automated and interactive Rock
 6. [Game Flow](#6-game-flow)
 7. [Cheating Detection & Winner Celebration](#7-cheating-detection--winner-celebration)
 8. [Usage](#8-usage)
-9. [Results](#9-results)
-10. [Future Work](#10-future-work)
-11. [License](#11-license)
+9. [Project Structure](#9-project-structure)
+10. [Results](#10-results)
+11. [Future Work](#11-future-work)
+12. [License](#12-license)
 
 ## 1. Introduction
 This project showcases an end-to-end pipeline for **real-time hand gesture detection** and **automated gameplay** of Rock–Paper–Scissors using **YOLOv11**. Beyond mere detection, we’ve added:
@@ -125,20 +126,76 @@ Additional constraints:
 
 ## 8. Usage
 
+Before running the game, ensure that all required dependencies are installed. This includes installing **CMake**, **Visual Studio Build Tools**, and **dlib**.
+
+### Preparation for dlib Installation (Windows)
+
+1. **CMake**  
+   - **Download**: Visit the [CMake Download Page](https://cmake.org/download/) and download the version for Windows 10 (64-bit).  
+   - **PATH Configuration**: Ensure the CMake installation directory is added to your Windows PATH. To verify, navigate to **This PC > Properties > Advanced system settings > Environment Variables** and check that the PATH includes the CMake directory.
+
+2. **Visual Studio Build Tools**  
+   - **Download**: Get the Visual Studio Build Tools from [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/).  
+   - **Installation**:  
+     - During installation, select the packages for **CMake tools for Windows** (which also installs MSVC and the Windows SDK required for C++ compilation).
+
+3. **Install CMake and dlib in Python**  
+   - **Install CMake Library**:  
+     Open a terminal and run:
+     ```bash
+     pip install cmake
+     ```
+   - **Install dlib Library**:  
+     With CMake installed and Visual Studio configured, run:
+     ```bash
+     pip install dlib
+     ```
+
+### Running the Game
+
 1. **Run the Game**  
+   After installing the dependencies, run the game with:
    ```bash
-   python game/main_game.py
+   python game/full_version_of_game.py
    ```
 2. **Webcam/Video**  
-   - By default, `main_game.py` uses your **webcam** to detect gestures.
+   - By default, `full_version_of_game.py` uses your **webcam** to detect gestures.
    - To test on a recorded video, modify the script’s input source to `video.mp4`.
-
 3. **Gameplay**  
    - Position both players so that their hands and faces are visible to the camera.
    - Once the program starts, the game runs a countdown.
    - Keep your gesture consistent until the round ends—**or get flagged**!
 
-## 9. Results
+## 9. Project Structure
+
+Below is the directory structure for the project:
+
+```
+rock-paper-scissors-simulator/
+├── README.md
+├── simple_version_of_game.py
+├── game/
+│   ├── fineTuned_best_V2.pt
+│   ├── full_version_of_game.py
+│   └── shape_predictor_68_face_landmarks.dat
+├── notebook/
+│   ├── computer-vision-final-project.ipynb
+│   ├── Rock-Paper-Scissors-Object-Detection-Yolo11-training.ipynb
+│   └── rsp-computer-vision-final-project.ipynb
+├── results/
+│   ├── fineTuned_V1/
+│   │   └── fineTuned_best_V1.pt
+│   └── fineTuned_V2/
+│       ├── args.yaml
+│       └── results.csv
+└── weights/
+    ├── fineTuned_best_V1.pt
+    ├── fineTuned_best_V2.pt
+    ├── fineTuned_last_V2.pt
+    └── yolo11n.pt
+```
+
+## 10. Results
 
 - **Detection Accuracy**: ~98.2% mAP@0.5 (Paper, Rock, Scissors).
 - **Real-Time FPS**: ~20–25 FPS on a moderate GPU.
@@ -147,14 +204,14 @@ Additional constraints:
 
 See the top of this README for a live **GIF** demonstration (`results/performance.gif`).
 
-## 10. Future Work
+## 11. Future Work
 
 - **Expand Gesture Set**: Include Lizard and Spock (extending the game).
 - **Multi-Round Tournaments**: Track multiple rounds and overall champion.
 - **Improve Cheating Detection**: Add advanced boundary rules (e.g., track hand path).
 - **UI/UX Enhancements**: On-screen scoreboard, animations, optional crowd cheering audio.
 
-## 11. License
+## 12. License
 
 This project is open-sourced under the [MIT License](LICENSE).  
 Feel free to fork, modify, and distribute—just cite us or give a link back!
